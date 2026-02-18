@@ -1,0 +1,17 @@
+{
+  "name": "Amor",
+  "short_name": "Amor",
+  "description": "Sadece ikimize özel gizli dünya.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf8f9",
+  "theme_color": "#ec4899",
+  "icons": [
+  
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

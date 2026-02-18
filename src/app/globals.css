@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-pink: #ec4899;
+  --color-brand-purple: #a855f7;
+}
+
+:root {
+  --background: #faf8f9;
+  --foreground: #1e293b;
+}
+
+body {
+  background: linear-gradient(135deg, #fdfbfb 0%, #f3ebf5 100%);
+  background-attachment: fixed;
+  color: var(--foreground);
+  min-height: 100vh;
+}
