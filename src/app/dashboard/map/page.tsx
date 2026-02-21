@@ -19,36 +19,36 @@ export default function MapPage() {
   const [myLocation, setMyLocation] = useState({ lat: 37.0222, lng: 35.3213 });
   const [viewPosition, setViewPosition] = useState({ lat: 37.0222, lng: 35.3213 });
   const [isViewingSoulmate, setIsViewingSoulmate] = useState(false);
+  
   const [soulmateLastSeen, setSoulmateLastSeen] = useState<string | null>(null);
+  const [myLastSeen, setMyLastSeen] = useState<string | null>(null); // YENİ: Kendi son kaydedilme saatim
 
-  // YENİ: Profil fotoğraflarını/emojilerini tutacağımız state'ler
-  const [myAvatar, setMyAvatar] = useState<string>("😎"); // Varsayılan emoji
-  const [soulmateAvatar, setSoulmateAvatar] = useState<string>("💖"); // Varsayılan emoji
+  const [myAvatar, setMyAvatar] = useState<string>("😎"); 
+  const [soulmateAvatar, setSoulmateAvatar] = useState<string>("💖"); 
 
-  // 1. KULLANICIYI VE KENDİ PROFİL FOTOSUNU TANI
+  // 1. KULLANICIYI VE VERİTABANINDAKİ KAYITLI SAATİNİ ÇEK
   useEffect(() => {
-    const getUserAndProfile = async () => {
+    const getUserData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUserId(session.user.id);
         
-        // KENDİ PROFİL VERİMİ ÇEKİYORUM
-        // (Kendi veritabanına göre tablo adını düzenle: örn 'users' veya 'profiles')
-        const { data: profile } = await supabase
-          .from("profiles") 
-          .select("avatar_url") // Emoji veya linkin olduğu sütun adı
-          .eq("id", session.user.id)
-          .single();
-          
-        if (profile && profile.avatar_url) {
-          setMyAvatar(profile.avatar_url);
+        // Kendi profil logomu çek
+        const { data: profile } = await supabase.from("profiles").select("avatar_url").eq("id", session.user.id).single();
+        if (profile?.avatar_url) setMyAvatar(profile.avatar_url);
+
+        // KENDİ EN SON KAYITLI KONUM SAATİMİ ÇEK (Eğer daha önce kaydetmişsem)
+        const { data: myLoc } = await supabase.from("user_locations").select("updated_at").eq("user_id", session.user.id).single();
+        if (myLoc) {
+          const date = new Date(myLoc.updated_at);
+          setMyLastSeen(date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
         }
       }
     };
-    getUserAndProfile();
+    getUserData();
   }, []);
 
-  // 2. KENDİ CANLI KONUMUNU BUL
+  // 2. KENDİ CANLI KONUMUNU TELEFONDAN BUL
   useEffect(() => {
     const getMyPosition = (highAccuracy: boolean) => {
       if (typeof window !== "undefined" && "geolocation" in navigator) {
@@ -62,20 +62,16 @@ export default function MapPage() {
           (err) => {
             if (highAccuracy && err.code === err.TIMEOUT) {
               getMyPosition(false); 
-            } else {
-              setLoading(false); 
-            }
+            } else { setLoading(false); }
           },
           { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 8000 : 15000 }
         );
-      } else {
-        setLoading(false);
-      }
+      } else { setLoading(false); }
     };
     getMyPosition(true);
   }, []);
 
-  // 3. IŞINLANMA BUTONU VE ONUN FOTOSUNU ÇEKME
+  // 3. IŞINLANMA VE VERİTABANI GÜNCELLEME
   const toggleView = async () => {
     if (isViewingSoulmate) {
       setViewPosition(myLocation);
@@ -92,28 +88,20 @@ export default function MapPage() {
             updated_at: new Date().toISOString(),
           }, { onConflict: 'user_id' });
 
+          // Konumu kaydettiğim için "Benim Son Görülme" saatimi de anlık güncelliyorum
+          setMyLastSeen(new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
+
           // B) Onun konumunu çek
-          const { data: locData } = await supabase
-            .from("user_locations")
-            .select("lat, lng, updated_at, user_id")
-            .neq("user_id", userId)
-            .single(); 
+          const { data: locData } = await supabase.from("user_locations").select("lat, lng, updated_at, user_id").neq("user_id", userId).single(); 
 
           if (locData) {
             setViewPosition({ lat: locData.lat, lng: locData.lng });
             const date = new Date(locData.updated_at);
             setSoulmateLastSeen(date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
             
-            // C) ONUN PROFİL FOTOSUNU/EMOJİSİNİ ÇEK
-            const { data: soulmateProfile } = await supabase
-              .from("profiles") // Kendi tablo adına göre düzenle
-              .select("avatar_url")
-              .eq("id", locData.user_id)
-              .single();
-              
-            if (soulmateProfile && soulmateProfile.avatar_url) {
-              setSoulmateAvatar(soulmateProfile.avatar_url);
-            }
+            // C) ONUN PROFİL FOTOSUNU ÇEK
+            const { data: soulmateProfile } = await supabase.from("profiles").select("avatar_url").eq("id", locData.user_id).single();
+            if (soulmateProfile?.avatar_url) setSoulmateAvatar(soulmateProfile.avatar_url);
 
             setIsViewingSoulmate(true);
           } else {
@@ -136,6 +124,11 @@ export default function MapPage() {
     );
   }
 
+  // YENİ: Tıklandığında gösterilecek metni hazırlıyoruz
+  const popupText = isViewingSoulmate 
+    ? (soulmateLastSeen ? `Son Görülme: ${soulmateLastSeen}` : "Bekleniyor...")
+    : (myLastSeen ? `Sisteme Kaydedildi: ${myLastSeen}` : "Canlı (Henüz Sisteme Bırakmadın)");
+
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-[#faf8f9] relative overflow-hidden">
       
@@ -143,8 +136,8 @@ export default function MapPage() {
         <MapUI 
           position={viewPosition} 
           isViewingSoulmate={isViewingSoulmate} 
-          // O an kime bakıyorsan onun avatarsını/emojisini gönderiyoruz!
           avatarContent={isViewingSoulmate ? soulmateAvatar : myAvatar} 
+          lastSeenText={popupText} // YENİ: Saat bilgisini haritaya gönderdik
         />
         <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-transparent to-slate-900/30 pointer-events-none z-[1]" />
       </div>
@@ -177,16 +170,11 @@ export default function MapPage() {
                 {isViewingSoulmate ? <span className="flex items-center justify-center gap-2"><Sparkles className="text-pink-400" size={18}/> Onun Dünyası</span> : "Sen Buradasın"}
               </h2>
               
-              {isViewingSoulmate && soulmateLastSeen ? (
-                <div className="flex items-center justify-center gap-1 text-xs font-bold text-pink-500 bg-pink-50 py-1.5 px-3 rounded-full mx-auto w-max mt-2 border border-pink-100">
-                  <Clock size={14} />
-                  Son Güncelleme: {soulmateLastSeen}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 font-medium">
-                  {isViewingSoulmate ? "Yükleniyor..." : "Işınlan butonuna bastığında konumun sisteme bırakılır."}
-                </p>
-              )}
+              <p className="text-xs text-slate-500 font-medium">
+                {isViewingSoulmate 
+                  ? "Tam saati görmek için haritadaki fotoğrafına tıkla." 
+                  : "Işınlan butonuna bastığında konumun sisteme bırakılır."}
+              </p>
             </motion.div>
           </AnimatePresence>
 
