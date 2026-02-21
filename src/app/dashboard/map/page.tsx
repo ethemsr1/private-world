@@ -1,138 +1,201 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
-import { MapPin, Navigation, Loader2, Sparkles, RefreshCw } from "lucide-react";
-import { supabase } from "../../../lib/supabase";
-
-const MapComponent = dynamic(() => import("./Map"), { 
-  ssr: false, 
-  loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 rounded-[2rem] border-4 border-white shadow-sm">
-      <Loader2 className="animate-spin text-pink-500 mb-2" size={32} />
-      <p className="text-sm font-bold text-slate-400">Harita Yükleniyor...</p>
-    </div>
-  )
-});
+import { Heart, Navigation, MapPin, Loader2, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "../../../lib/supabase"; // Supabase yolunu kendi dosyana göre ayarla
 
 export default function MapPage() {
-  const [myProfile, setMyProfile] = useState<any>(null);
-  const [partnerProfile, setPartnerProfile] = useState<any>(null);
-  const [loadingLocation, setLoadingLocation] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [fetchingSoulmate, setFetchingSoulmate] = useState(false); // Butona basılınca dönecek loader
+  
+  const [myLocation, setMyLocation] = useState({ lat: 37.0222, lng: 35.3213 });
+  const [viewPosition, setViewPosition] = useState({ lat: 37.0222, lng: 35.3213 });
+  const [isViewingSoulmate, setIsViewingSoulmate] = useState(false);
 
-  // Veritabanından İkimizin Bilgilerini Çek (Son Görülmeleri Alır)
-  const fetchLocations = async () => {
-    setRefreshing(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    const { data: myData } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-
-    if (myData) {
-      setMyProfile(myData);
-      if (myData.partner_email) {
-        const { data: partnerData } = await supabase.from('profiles').select('*').eq('email', myData.partner_email).single();
-        if (partnerData) setPartnerProfile(partnerData);
-      }
-    }
-    setRefreshing(false);
-  };
-
+  // 1. SAYFA AÇILINCA KULLANICIYI TANI
   useEffect(() => {
-    fetchLocations();
+    const getUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUserId(session.user.id);
+      }
+    };
+    getUser();
   }, []);
 
-  // TELEFONUN GPS'İNDEN KONUM AL VE VERİTABANINA YAZ
-  const updateMyLocation = () => {
-    setLoadingLocation(true);
-    
-    if (!navigator.geolocation) {
-      alert("Cihazınız konum özelliğini desteklemiyor.");
-      setLoadingLocation(false);
-      return;
+  // 2. KENDİ CANLI KONUMUNU TELEFONDAN TAKİP ET
+  useEffect(() => {
+    let watchId: number;
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setMyLocation(newPos);
+          if (!isViewingSoulmate) setViewPosition(newPos);
+          setLoading(false);
+        },
+        (err) => {
+          console.error("Konum hatası:", err);
+          setLoading(false);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      );
+    } else {
+      setLoading(false);
     }
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [isViewingSoulmate]);
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+  // 3. IŞINLANMA BUTONU MANTIĞI (BACKEND HABERLEŞMESİ)
+  const toggleView = async () => {
+    if (isViewingSoulmate) {
+      // Kendi konumuma geri dön
+      setViewPosition(myLocation);
+      setIsViewingSoulmate(false);
+    } else {
+      // ONUN YANINA IŞINLANMA İŞLEMİ BAŞLIYOR
+      setFetchingSoulmate(true);
 
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          // Supabase'e yeni koordinatları kaydet (Son Görülmeni Günceller)
-          await supabase.from('profiles').update({ 
-            lat: lat, 
-            lng: lng,
-            location_updated_at: new Date().toISOString()
-          }).eq('id', session.user.id);
+      if (userId) {
+        // A) Önce BENİM en güncel konumumu veritabanına yaz (O da beni güncel görsün diye)
+        await supabase.from("user_locations").upsert({
+          user_id: userId,
+          lat: myLocation.lat,
+          lng: myLocation.lng,
+          updated_at: new Date().toISOString(),
+        });
 
-          fetchLocations(); // Ekranı yenile
+        // B) Sonra ONUN (Benim ID'm olmayan kişinin) en son konumunu veritabanından çek
+        const { data, error } = await supabase
+          .from("user_locations")
+          .select("lat, lng, updated_at")
+          .neq("user_id", userId)
+          .single(); // Sadece 1 kişi (ruh eşin) dönecek
+
+        if (data) {
+          setViewPosition({ lat: data.lat, lng: data.lng });
+          setIsViewingSoulmate(true);
+        } else {
+          alert("Ruh eşin henüz Amor'a konumunu bırakmamış... 🥺");
         }
-        setLoadingLocation(false);
-      }, 
-      (error) => {
-        setLoadingLocation(false);
-        // Hata mesajlarını daha net hale getirdik
-        if (error.code === 1) alert("Konum izni reddedildi. Tarayıcı ayarlarından izin verin.");
-        else if (error.code === 2) alert("Konum bulunamadı. Kapalı bir alanda olabilirsiniz veya bilgisayardan deniyorsunuz.");
-        else alert("Konum alınırken zaman aşımı oldu.");
-      }, 
-      {
-        enableHighAccuracy: true,
-        timeout: 10000, // 10 saniye bulamazsa iptal et
-        maximumAge: 0
       }
-    );
+      
+      setFetchingSoulmate(false);
+    }
   };
 
-  return (
-    <div className="p-6 pb-32 h-[100dvh] flex flex-col">
-      <header className="mb-6 mt-4 flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
-            Haritamız <MapPin className="text-pink-500" size={28} />
-          </h1>
-          <p className="text-slate-500 text-sm mt-1 flex items-center gap-1 font-medium">
-            <Sparkles size={14} className="text-emerald-400" /> Birbirimizden hiç kopmayalım.
-          </p>
-        </div>
-        
-        {/* YENİ: Sadece veritabanındaki son konumları çeken yenileme tuşu */}
-        <button 
-          onClick={fetchLocations} 
-          disabled={refreshing}
-          className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 text-slate-400 hover:text-pink-500 active:scale-90 transition-all"
+  // YÜKLENİYOR EKRANI
+  if (loading) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#faf8f9] relative overflow-hidden">
+        <div className="absolute w-64 h-64 bg-pink-200/50 rounded-full blur-[80px] animate-pulse" />
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }} 
+          animate={{ scale: 1, opacity: 1 }} 
+          transition={{ repeat: Infinity, duration: 1.5, repeatType: "reverse" }}
+          className="z-10 bg-white p-6 rounded-full shadow-2xl shadow-pink-200"
         >
-          <RefreshCw size={20} className={refreshing ? "animate-spin text-pink-500" : ""} />
-        </button>
-      </header>
+          <Navigation className="text-pink-500" size={32} />
+        </motion.div>
+        <p className="mt-6 text-slate-400 font-medium z-10 tracking-widest text-xs uppercase">Uydu Bağlantısı Kuruluyor...</p>
+      </div>
+    );
+  }
 
-      {/* HARİTA ALANI */}
-      <div className="flex-1 min-h-[400px] mb-6 relative">
-        <MapComponent myProfile={myProfile} partnerProfile={partnerProfile} />
+  return (
+    <div className="flex flex-col h-[100dvh] bg-[#faf8f9] relative overflow-hidden">
+      
+      <div className="absolute inset-0 z-0">
+        <iframe
+          width="100%"
+          height="100%"
+          frameBorder="0"
+          style={{ filter: "sepia(0.2) contrast(1.05) saturate(1.2) hue-rotate(-5deg)" }}
+          src={`https://maps.google.com/maps?q=${viewPosition.lat},${viewPosition.lng}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+          allowFullScreen
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/40 via-transparent to-slate-900/40 pointer-events-none" />
       </div>
 
-      {/* KONUM GÜNCELLEME BUTONU (Kendi GPS'ini yazar) */}
-      <motion.button 
-        whileTap={{ scale: 0.95 }}
-        onClick={updateMyLocation}
-        disabled={loadingLocation}
-        className="w-full bg-slate-900 text-white font-bold py-5 rounded-[2rem] shadow-[0_15px_30px_rgba(0,0,0,0.15)] hover:bg-slate-800 transition-all active:scale-95 flex justify-center items-center gap-3 disabled:opacity-70"
+      {/* ÜST BİLGİ KARTI */}
+      <motion.div 
+        initial={{ y: -50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="absolute top-safe pt-6 left-0 right-0 px-4 z-10 flex justify-center pointer-events-none"
       >
-        {loadingLocation ? (
-          <>
-            <Loader2 className="animate-spin text-emerald-400" size={24} /> 
-            Uydu Aranıyor...
-          </>
-        ) : (
-          <>
-            <Navigation className="text-emerald-400" size={24} fill="currentColor" /> 
-            Konumumu Haritaya Sabitle
-          </>
-        )}
-      </motion.button>
+        <div className="bg-white/70 backdrop-blur-2xl border border-white/60 px-5 py-3 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.08)] flex items-center gap-3">
+          <span className="relative flex h-3 w-3">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isViewingSoulmate ? 'bg-pink-400' : 'bg-blue-400'}`}></span>
+            <span className={`relative inline-flex rounded-full h-3 w-3 ${isViewingSoulmate ? 'bg-pink-500' : 'bg-blue-500'}`}></span>
+          </span>
+          <p className="text-sm font-bold text-slate-800 tracking-tight">
+            {isViewingSoulmate ? "Onun Dünyasındasın" : "Kendi Konumundasın"}
+          </p>
+        </div>
+      </motion.div>
+
+      {/* ALT KONTROL PANELİ */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 pb-safe">
+        <motion.div 
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="mx-4 mb-6"
+        >
+          <div className="bg-white/80 backdrop-blur-3xl border border-white/50 p-6 rounded-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col items-center">
+            
+            <div className="w-12 h-1 bg-slate-200 rounded-full mb-6" /> 
+
+            <AnimatePresence mode="wait">
+              <motion.div 
+                key={isViewingSoulmate ? "soulmate" : "me"}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="text-center mb-6"
+              >
+                <h2 className="text-2xl font-black text-slate-800 mb-1 flex items-center justify-center gap-2">
+                  {isViewingSoulmate ? <><Sparkles className="text-pink-400" size={24} /> Ruh Eşin</> : "Sen Buradasın"}
+                </h2>
+                <p className="text-sm text-slate-500 font-medium">
+                  {isViewingSoulmate ? "Şu an kalbinin attığı yeri görüyorsun." : "Radarlar seni takip ediyor."}
+                </p>
+              </motion.div>
+            </AnimatePresence>
+
+            <button 
+              onClick={toggleView}
+              disabled={fetchingSoulmate}
+              className={`w-full relative overflow-hidden rounded-2xl p-4 shadow-xl transition-transform active:scale-95 disabled:opacity-70 ${
+                isViewingSoulmate 
+                  ? "bg-slate-900 text-white shadow-slate-900/20" 
+                  : "bg-gradient-to-r from-pink-500 to-rose-400 text-white shadow-pink-500/30"
+              }`}
+            >
+              <div className="relative flex items-center justify-center gap-3">
+                {fetchingSoulmate ? (
+                  <Loader2 size={20} className="animate-spin text-white" />
+                ) : isViewingSoulmate ? (
+                  <>
+                    <MapPin size={20} />
+                    <span className="font-bold text-base">Bana Geri Dön</span>
+                  </>
+                ) : (
+                  <>
+                    <Heart size={20} className="fill-white" />
+                    <span className="font-bold text-base">Onun Yanına Işınlan</span>
+                  </>
+                )}
+              </div>
+            </button>
+
+          </div>
+        </motion.div>
+      </div>
+      
     </div>
   );
 }
