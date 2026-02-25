@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Image as ImageIcon, Map, ListTodo, User, Bell, Gamepad2 } from "lucide-react";
+import { Home, Image as ImageIcon, Map, ListTodo, User, Bell, Gamepad2, CalendarHeart } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -47,6 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { icon: Home, label: "Ana Sayfa", href: "/dashboard" },
     { icon: ImageIcon, label: "Anılar", href: "/dashboard/memory-lane" },
+    { icon: CalendarHeart, label: "Günlük", href: "/dashboard/calendar" },
     { icon: Map, label: "Harita", href: "/dashboard/map" },
     { icon: ListTodo, label: "Planlar", href: "/dashboard/plans" },
     { icon: Gamepad2, label: "Oyun", href: "/dashboard/games" },
