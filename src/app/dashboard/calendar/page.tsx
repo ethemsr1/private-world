@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Star, X, Heart, Edit3 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Star, X, Heart, Edit3, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../../../lib/supabase"; 
 
@@ -84,6 +84,7 @@ export default function CalendarPage() {
     const dateString = getLocalYYYYMMDD(date);
     const myExistingScore = scores.find(n => n.date_val === dateString && n.user_id === userId);
     
+    // Daha önceden girilmemişse varsayılan değerleri temizler (Girilmişse zaten form görünmeyecek)
     setInputScore(myExistingScore?.score || 10);
     setInputNote(myExistingScore?.note || "");
   };
@@ -106,10 +107,8 @@ export default function CalendarPage() {
   };
 
   return (
-    // overflow-hidden ile sayfanın tamamen kaymasını engelledik
     <div className="flex flex-col h-[100dvh] bg-[#faf8f9] relative overflow-hidden">
       
-      {/* ÜST BAŞLIK (Sabit) */}
       <div className="pt-safe px-6 pt-8 pb-4 bg-white/50 backdrop-blur-lg flex justify-between items-center shrink-0 z-10">
         <button onClick={handlePrevMonth} className="p-2 bg-white rounded-full shadow-sm text-slate-700 active:scale-95"><ChevronLeft size={24} /></button>
         <h1 className="text-xl font-black text-slate-800 tracking-wide uppercase">
@@ -118,7 +117,6 @@ export default function CalendarPage() {
         <button onClick={handleNextMonth} className="p-2 bg-white rounded-full shadow-sm text-slate-700 active:scale-95"><ChevronRight size={24} /></button>
       </div>
 
-      {/* TAKVİM IZGARASI (Esnek, ortaya oturur) */}
       <div className="px-4 py-2 flex-1 overflow-y-auto">
         <div className="grid grid-cols-7 gap-2 mb-2">
           {['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].map(day => (
@@ -162,8 +160,6 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* ALT ORTALAMA KARTI (SABİT) */}
-      {/* pb-[100px] sayesinde Alt Bar (Bottom Nav) ile çakışmaz, ekranın tam altına oturur */}
       <div className="shrink-0 px-4 pb-[100px] pt-2 z-20">
         <div className="bg-white/90 backdrop-blur-2xl border border-slate-200/60 p-4 rounded-3xl shadow-lg flex justify-between items-center">
           
@@ -184,7 +180,6 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* MODAL (GÜN DETAYI) */}
       <AnimatePresence>
         {selectedDate && (
           <motion.div 
@@ -205,6 +200,7 @@ export default function CalendarPage() {
                 <button onClick={() => setSelectedDate(null)} className="p-2 bg-slate-200 rounded-full text-slate-600 active:scale-95"><X size={20} /></button>
               </div>
 
+              {/* RUH EŞİNİN GÜNÜ (Okunabilir alan) */}
               {(() => {
                 const dateStr = getLocalYYYYMMDD(selectedDate);
                 const theirScore = scores.find(n => n.date_val === dateStr && n.user_id !== userId);
@@ -222,36 +218,64 @@ export default function CalendarPage() {
                 return null;
               })()}
 
-              <div className="p-5 rounded-3xl bg-white border border-slate-100 shadow-lg mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <Edit3 size={18} className="text-blue-500" />
-                  <h3 className="font-bold text-slate-700 uppercase text-xs tracking-widest">Senin Günün</h3>
-                </div>
+              {/* SENİN GÜNÜN (KİLİTLİ Mİ YOKSA DÜZENLENEBİLİR Mİ?) */}
+              {(() => {
+                const dateStr = getLocalYYYYMMDD(selectedDate);
+                const myScoreData = scores.find(n => n.date_val === dateStr && n.user_id === userId);
 
-                <div className="flex justify-between items-center mb-6 bg-slate-50 p-2 rounded-2xl">
-                  {[1,2,3,4,5,6,7,8,9,10].map(num => (
+                // EĞER DAHA ÖNCE NOT GİRİLMİŞSE (MÜHÜRLENMİŞSE) -> Sadece Oku (Kilitli Tasarım)
+                if (myScoreData) {
+                  return (
+                    <div className="p-5 rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 shadow-sm relative mb-8">
+                      <div className="absolute -top-3 left-4 bg-blue-500 text-white text-[10px] font-bold uppercase px-3 py-1 rounded-full shadow-md">Senin Günün</div>
+                      
+                      <div className="flex items-center gap-1 text-blue-500 font-black text-xl mb-2 mt-2">
+                        {myScoreData.score} / 10 <Star size={18} className="fill-blue-500" />
+                      </div>
+                      <p className="text-sm text-slate-700 italic">"{myScoreData.note}"</p>
+                      
+                      {/* Mühür Rozeti */}
+                      <div className="mt-5 flex items-center justify-center gap-1 text-[10px] font-bold text-blue-500 uppercase tracking-widest bg-blue-100/60 py-2 rounded-xl">
+                        <Lock size={12} /> Bu gün mühürlendi
+                      </div>
+                    </div>
+                  );
+                }
+
+                // EĞER NOT GİRİLMEMİŞSE -> Doldurma Formu Açılsın
+                return (
+                  <div className="p-5 rounded-3xl bg-white border border-slate-100 shadow-lg mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Edit3 size={18} className="text-blue-500" />
+                      <h3 className="font-bold text-slate-700 uppercase text-xs tracking-widest">Senin Günün</h3>
+                    </div>
+
+                    <div className="flex justify-between items-center mb-6 bg-slate-50 p-2 rounded-2xl">
+                      {[1,2,3,4,5,6,7,8,9,10].map(num => (
+                        <button 
+                          key={num} onClick={() => setInputScore(num)}
+                          className={`w-8 h-8 rounded-full font-bold text-sm transition-all ${inputScore === num ? 'bg-blue-500 text-white shadow-md scale-110' : 'text-slate-400 hover:bg-slate-200'}`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+
+                    <textarea 
+                      value={inputNote} onChange={(e) => setInputNote(e.target.value)}
+                      placeholder="Bugün en çok neye mutlu oldun? Ona ne söylemek istersin?"
+                      className="w-full bg-slate-50 border-none rounded-2xl p-4 text-sm text-slate-700 h-32 focus:ring-2 focus:ring-blue-100 outline-none resize-none mb-4"
+                    />
+
                     <button 
-                      key={num} onClick={() => setInputScore(num)}
-                      className={`w-8 h-8 rounded-full font-bold text-sm transition-all ${inputScore === num ? 'bg-blue-500 text-white shadow-md scale-110' : 'text-slate-400 hover:bg-slate-200'}`}
+                      onClick={saveNote} disabled={saving}
+                      className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex justify-center"
                     >
-                      {num}
+                      {saving ? "Kaydediliyor..." : "Günü Mühürle"}
                     </button>
-                  ))}
-                </div>
-
-                <textarea 
-                  value={inputNote} onChange={(e) => setInputNote(e.target.value)}
-                  placeholder="Bugün en çok neye mutlu oldun? Ona ne söylemek istersin?"
-                  className="w-full bg-slate-50 border-none rounded-2xl p-4 text-sm text-slate-700 h-32 focus:ring-2 focus:ring-blue-100 outline-none resize-none mb-4"
-                />
-
-                <button 
-                  onClick={saveNote} disabled={saving}
-                  className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex justify-center"
-                >
-                  {saving ? "Kaydediliyor..." : "Günü Mühürle"}
-                </button>
-              </div>
+                  </div>
+                );
+              })()}
 
             </div>
           </motion.div>
