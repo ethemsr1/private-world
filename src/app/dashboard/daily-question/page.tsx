@@ -70,7 +70,8 @@ const QUESTIONS = [
 ];
 
 export default function DailyQuestionPage() {
-  const [questionIndex, setQuestionIndex] = useState(0);
+  // FIX 1: Başlangıç değeri 0 yerine null yapıldı. Race Condition engellendi!
+  const [questionIndex, setQuestionIndex] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -81,26 +82,22 @@ export default function DailyQuestionPage() {
   const [myAnswer, setMyAnswer] = useState<string | null>(null);
   const [partnerAnswer, setPartnerAnswer] = useState<string | null>(null);
 
-  // YENİ: Türkiye saatine göre Gece 00:00 baz alınarak "Günün Sorusu" indeksini bulma
   useEffect(() => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Yerel saatle bugünün başlangıcı
-    
-    // Her gün gece 00:00'da sayı 1 artar.
+    today.setHours(0, 0, 0, 0); 
     const dayValue = Math.floor(today.getTime() / (1000 * 60 * 60 * 24));
-    
-    // 60 soru bittiğinde başa sarması için mod (Kalan bulma) kullanıyoruz
     const dailyIndex = dayValue % QUESTIONS.length;
     setQuestionIndex(dailyIndex);
   }, []);
 
   useEffect(() => {
     if (questionIndex !== null) {
-      fetchData();
+      fetchData(questionIndex);
     }
   }, [questionIndex]);
 
-  const fetchData = async () => {
+  // currentIndex parametresi ekledik ki başka sorunun datasıyla karışmasın
+  const fetchData = async (currentIndex: number) => {
     setLoading(true);
     setMyAnswer(null);
     setPartnerAnswer(null);
@@ -117,8 +114,11 @@ export default function DailyQuestionPage() {
       }
     }
 
-    // Veritabanında "Bugünün Sorusu"na ait cevapları çek
-    const { data: answers } = await supabase.from('answers').select('*').eq('question_id', questionIndex);
+    // FIX 2: order('created_at', { ascending: false }) eklendi. En güncel cevabı çekecek!
+    const { data: answers } = await supabase.from('answers')
+      .select('*')
+      .eq('question_id', currentIndex)
+      .order('created_at', { ascending: false });
     
     if (answers && me) {
       const mine = answers.find(a => a.user_id === me.id);
@@ -137,7 +137,7 @@ export default function DailyQuestionPage() {
 
   const submitAnswer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !myProfile) return;
+    if (!inputText.trim() || !myProfile || questionIndex === null) return;
     setSubmitting(true);
 
     const { error } = await supabase.from('answers').insert([{
@@ -150,7 +150,6 @@ export default function DailyQuestionPage() {
       setMyAnswer(inputText);
       setInputText("");
 
-      // YENİ: CEVAPLADIĞIN AN PARTNERE KIŞKIRTICI BİLDİRİM GÖNDER!
       if (myProfile.partner_email) {
         await supabase.from('notifications').insert([{
           receiver_email: myProfile.partner_email,
@@ -171,7 +170,6 @@ export default function DailyQuestionPage() {
         <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
           Günün Sorusu <Coffee className="text-purple-500" size={28} />
         </h1>
-        {/* İleri Geri tuşları kaldırıldı, yerine Güncel Saat İkonu eklendi */}
         <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-1.5 shadow-sm text-purple-600">
           <Clock size={16} className="animate-pulse" />
           <span className="text-xs font-bold">24 Saatte Bir</span>
@@ -191,7 +189,8 @@ export default function DailyQuestionPage() {
           Günün Özel Sorusu
         </p>
         <h2 className="text-xl font-black text-slate-800 leading-snug">
-          "{QUESTIONS[questionIndex]}"
+          {/* FIX 3: Index null iken uygulamanın çökmesini engeller */}
+          {questionIndex !== null ? `"${QUESTIONS[questionIndex]}"` : "Günün sorusu hazırlanıyor..."}
         </h2>
       </motion.div>
 
